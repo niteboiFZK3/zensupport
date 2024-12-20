@@ -1,0 +1,685 @@
+local allowedHWIDs = { -- Таблица с разрешёнными HWID
+    "ABC01B11-BAD0-49ED-906F-CF97E431F0E6", -- Первый HWID
+    ""  -- Второй HWID
+}
+
+local currentHWID = game:GetService("RbxAnalyticsService"):GetClientId() -- Получаем HWID игрока
+
+local function isHWIDAllowed(hwid)
+    for _, allowedHWID in ipairs(allowedHWIDs) do
+        if hwid == allowedHWID then
+            return true -- Если совпало, возвращаем true
+        end
+    end
+    return false -- Если нет совпадений, возвращаем false
+end
+
+if not isHWIDAllowed(currentHWID) then
+    game.Players.LocalPlayer:Kick("Access Denied: Invalid HWID")
+else
+    print("HWID verified successfully!")
+end
+
+
+
+local StarterGui = game:GetService("StarterGui")
+
+-- Скрываем только верхний бар и чат
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false) -- Список игроков
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false) -- Чат
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) -- Инвентарь
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false) -- Полоса здоровья
+
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Функция для форматирования валюты
+local function formatCurrency(value)
+    if value >= 1000000 then
+        return string.format("%.1fm", value / 1000000)
+    elseif value >= 1000 then
+        return string.format("%.1fk", value / 1000)
+    else
+        return tostring(value)
+    end
+end
+
+-- Функция для отправки сообщения в вебхук
+local function sendWebhookMessage(embed)
+    local data = { embeds = embed }
+    local jsonData = HttpService:JSONEncode(data)
+
+    local request = http_request or request
+    if request then
+        local response = request({
+            Url = webhook,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = jsonData
+        })
+
+        if response and response.StatusCode then
+            print("Webhook response status: " .. response.StatusCode)
+        else
+            print("Failed to send webhook request.")
+        end
+    else
+        warn("HTTP request function is not available.")
+    end
+end
+
+-- Функция для отправки информации о покупателе
+local function sendBuyerInfo(targetPlayerName)
+    local buyerData = pokupatel[targetPlayerName]
+
+    if buyerData then
+        local targetPlayer = Players:FindFirstChild(targetPlayerName)
+
+        if targetPlayer then
+            local currency = targetPlayer:WaitForChild("DataFolder"):WaitForChild("Currency")
+            local currentCurrency = currency.Value
+            local formattedCurrentCurrency = formatCurrency(currentCurrency)
+
+            local goalAmount = tonumber(buyerData:sub(1, -2)) * (buyerData:sub(-1) == "m" and 1000000 or 1000)
+            local remainingAmount = math.max(0, goalAmount - currentCurrency)
+            local formattedRemainingAmount = formatCurrency(remainingAmount)
+
+            local embed = {
+                {
+                    title = "Buyer Info - " .. targetPlayerName,
+                    description = string.format(
+                        "**Buyer Name**: %s\n**Amount Purchased**: %s\n**Current Currency**: %s\n**Remaining Amount**: %s",
+                        targetPlayerName, buyerData, formattedCurrentCurrency, formattedRemainingAmount
+                    ),
+                    color = 0x0000FF,
+                    footer = { text = "Buyer Information" }
+                }
+            }
+
+            sendWebhookMessage(embed)
+        else
+            print("Player not found in game.")
+        end
+    else
+        print("Buyer not found in records.")
+    end
+end
+
+-- Скрипт для отображения валюты на экране
+local player = game.Players.LocalPlayer
+local dataFolder = player:WaitForChild("DataFolder")
+local currency = dataFolder:WaitForChild("Currency")
+
+-- Создаем GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Создаем фрейм
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 300, 0, 100)  -- размер фрейма
+frame.Position = UDim2.new(0.5, -150, 0, 50)  -- позиция фрейма
+frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+frame.BackgroundTransparency = 0.7
+frame.BorderSizePixel = 2
+frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+frame.Parent = screenGui
+
+-- Создаем текстовую метку для отображения валюты
+local currencyTextLabel = Instance.new("TextLabel")
+currencyTextLabel.Size = UDim2.new(1, 0, 1, 0)  -- размер текста
+currencyTextLabel.Position = UDim2.new(0, 0, 0, 0)  -- позиция текста
+currencyTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+currencyTextLabel.TextSize = 32  -- увеличиваем размер текста
+currencyTextLabel.Text = "Currency: " .. currency.Value
+currencyTextLabel.Font = Enum.Font.GothamBold  -- стиль шрифта
+currencyTextLabel.TextStrokeTransparency = 0.5  -- контур текста
+currencyTextLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)  -- цвет контура
+currencyTextLabel.TextYAlignment = Enum.TextYAlignment.Center  -- выравнивание по вертикали
+currencyTextLabel.Parent = frame
+
+-- Добавим анимацию для фрейма
+local tweenService = game:GetService("TweenService")
+local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, -1, true)  -- настройка анимации
+local goal = {Position = UDim2.new(0.5, -150, 0, 60)}  -- цель для анимации
+local tween = tweenService:Create(frame, tweenInfo, goal)
+tween:Play()
+
+-- Обновляем валюту
+currency.Changed:Connect(function()
+    currencyTextLabel.Text = "Currency: " .. currency.Value
+end)
+
+
+-- Создаем новогодний интерфейс
+local screenGui = Instance.new("ScreenGui")
+local blackBackground = Instance.new("Frame")
+local frame = Instance.new("Frame")
+local button = Instance.new("TextButton")
+local statusLabel = Instance.new("TextLabel")
+local currencyLabel = Instance.new("TextLabel")
+local goalLabel = Instance.new("TextLabel")
+local snowEffect = Instance.new("Folder")
+
+
+
+
+-- Настройки GUI
+screenGui.Parent = PlayerGui
+screenGui.Name = "NewYearGUI"
+
+blackBackground.Parent = screenGui
+blackBackground.Size = UDim2.new(1, 0, 1, 0)
+blackBackground.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+
+local gradient = Instance.new("UIGradient", blackBackground)
+gradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(50, 0, 100))
+}
+gradient.Rotation = 90
+
+frame.Parent = blackBackground
+frame.Size = UDim2.new(0, 400, 0, 300)
+frame.Position = UDim2.new(0.5, -200, 0.5, -150)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+frame.BorderSizePixel = 2
+
+-- Добавляем логотип
+local logo = Instance.new("ImageLabel")
+logo.Parent = frame
+logo.Size = UDim2.new(0, 350, 0, 350)
+logo.Position = UDim2.new(0.5, -170, 0, -170)
+logo.Image = "rbxassetid://122628540142410"
+logo.BackgroundTransparency = 1
+
+button.Parent = frame
+button.Size = UDim2.new(0, 300, 0, 50)
+button.Position = UDim2.new(0.5, -150, 0.1, 0)
+button.Text = "Check Buyer Info"
+button.TextScaled = true
+button.BackgroundColor3 = Color3.fromRGB(60, 60, 255)
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.BorderColor3 = Color3.fromRGB(255, 255, 255)
+button.BorderSizePixel = 2
+
+local labels = {
+    {label = statusLabel, text = "Status: Waiting", position = 0.3},
+    {label = currencyLabel, text = "Currency: N/A", position = 0.4},
+    {label = goalLabel, text = "Goal: N/A", position = 0.5}
+}
+
+for _, data in pairs(labels) do
+    local label = data.label
+    label.Parent = frame
+    label.Size = UDim2.new(1, -20, 0, 30)
+    label.Position = UDim2.new(0, 10, data.position, 0)
+    label.Text = data.text
+    label.TextScaled = true
+    label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.BorderSizePixel = 0
+end
+
+snowEffect.Parent = blackBackground
+local function createSnowflake()
+    local snowflake = Instance.new("Frame")
+    snowflake.Size = UDim2.new(0, 5, 0, 5)
+    snowflake.Position = UDim2.new(math.random(), 0, -0.1, 0)
+    snowflake.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    snowflake.BorderSizePixel = 0
+    snowflake.Parent = snowEffect
+
+    local tween = game:GetService("TweenService"):Create(
+        snowflake,
+        TweenInfo.new(5, Enum.EasingStyle.Linear),
+        {Position = UDim2.new(snowflake.Position.X.Scale, 0, 1.1, 0)}
+    )
+    tween:Play()
+    tween.Completed:Connect(function()
+        snowflake:Destroy()
+    end)
+end
+
+game:GetService("RunService").RenderStepped:Connect(function()
+    if math.random() > 0.9 then
+        createSnowflake()
+    end
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Parent = game.Players.LocalPlayer.PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(1, 0, 0, -500) -- Это может создать полосу сверху!
+frame.Position = UDim2.new(0, 0, 0, 0)
+frame.BackgroundColor3 = Color3.new(0.000000, 0.000000, 0.000000)
+frame.Parent = gui
+
+
+-- Функция мигания зеленым цветом
+local function flashGreenEffect()
+    local tweenService = game:GetService("TweenService")
+
+    local flashTween = tweenService:Create(
+        statusLabel,
+        TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, true),
+        {TextColor3 = Color3.fromRGB(0, 255, 0)}
+    )
+    flashTween:Play()
+end
+
+
+
+button.MouseButton1Click:Connect(function()
+    for playerName, _ in pairs(pokupatel) do
+        local targetPlayer = Players:FindFirstChild(playerName)
+        if targetPlayer then
+            local currency = targetPlayer:FindFirstChild("DataFolder"):FindFirstChild("Currency")
+            if currency then
+                local currentCurrency = currency.Value
+                local goalAmount = tonumber(pokupatel[playerName]:sub(1, -2)) * (pokupatel[playerName]:sub(-1) == "m" and 1000000 or 1000)
+                local remainingAmount = math.max(0, goalAmount - currentCurrency)
+                statusLabel.Text = "Status: Online (" .. playerName .. ")"
+                statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                currencyLabel.Text = "Currency: " .. formatCurrency(currentCurrency)
+                goalLabel.Text = "Goal: " .. formatCurrency(remainingAmount) .. " remaining"
+
+                if remainingAmount == 0 then
+                    flashGreenEffect()
+                else
+                    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                end
+
+                sendBuyerInfo(playerName)
+            end
+        else
+            statusLabel.Text = "Status: Not Found"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+            currencyLabel.Text = "Currency: N/A"
+            goalLabel.Text = "Goal: N/A"
+        end
+    end
+end)
+
+-- Скрипт для отображения валюты на экране
+local player = game.Players.LocalPlayer
+local dataFolder = player:WaitForChild("DataFolder")
+local currency = dataFolder:WaitForChild("Currency")
+
+-- Создаем GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Создаем фрейм
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 300, 0, 100)  -- размер фрейма
+frame.Position = UDim2.new(0.5, -150, 0, 50)  -- позиция фрейма
+frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+frame.BackgroundTransparency = 0.7
+frame.BorderSizePixel = 2
+frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+frame.Parent = screenGui
+
+-- Создаем текстовую метку для отображения валюты
+local currencyTextLabel = Instance.new("TextLabel")
+currencyTextLabel.Size = UDim2.new(1, 0, 1, 0)  -- размер текста
+currencyTextLabel.Position = UDim2.new(0, 0, 0, 0)  -- позиция текста
+currencyTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+currencyTextLabel.TextSize = 32  -- увеличиваем размер текста
+currencyTextLabel.Text = "Currency: " .. currency.Value
+currencyTextLabel.Font = Enum.Font.GothamBold  -- стиль шрифта
+currencyTextLabel.TextStrokeTransparency = 0.5  -- контур текста
+currencyTextLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)  -- цвет контура
+currencyTextLabel.TextYAlignment = Enum.TextYAlignment.Center  -- выравнивание по вертикали
+currencyTextLabel.Parent = frame
+
+-- Добавим анимацию для фрейма
+local tweenService = game:GetService("TweenService")
+local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, -1, true)  -- настройка анимации
+local goal = {Position = UDim2.new(0.5, -150, 0, 60)}  -- цель для анимации
+local tween = tweenService:Create(frame, tweenInfo, goal)
+tween:Play()
+
+-- Обновляем валюту
+currency.Changed:Connect(function()
+    currencyTextLabel.Text = "Currency: " .. currency.Value
+end)
+
+
+
+game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
+    -- Персонаж был добавлен и загружен
+
+    -- Ждем, пока PlayerGui будет доступен
+    local PlayerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    local screenGui = PlayerGui:FindFirstChild("NewYearGUI")
+
+    -- Если GUI не существует, создаем его
+    if not screenGui then
+        screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "NewYearGUI"
+        screenGui.Parent = PlayerGui
+
+        -- Создаем основной фон
+        local blackBackground = Instance.new("Frame")
+        blackBackground.Parent = screenGui
+        blackBackground.Size = UDim2.new(1, 0, 1, 0)  -- Размер на весь экран
+        blackBackground.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+
+        -- Создаем градиент для фона
+        local gradient = Instance.new("UIGradient", blackBackground)
+        gradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 50)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(50, 0, 100))
+        }
+        gradient.Rotation = 90
+
+        -- Создаем рамку для основного интерфейса
+        local frame = Instance.new("Frame")
+        frame.Parent = blackBackground
+        frame.Size = UDim2.new(0, 400, 0, 300)
+        frame.Position = UDim2.new(0.5, -200, 0.5, -150)  -- Центрируем рамку
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+        frame.BorderSizePixel = 2
+
+        -- Добавляем кнопку "Check Buyer Info"
+        local button = Instance.new("TextButton")
+        button.Parent = frame
+        button.Size = UDim2.new(0, 300, 0, 50)
+        button.Position = UDim2.new(0.5, -150, 0.1, 0)
+        button.Text = "Check Buyer Info"
+        button.TextScaled = true
+        button.BackgroundColor3 = Color3.fromRGB(60, 60, 255)
+        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.BorderColor3 = Color3.fromRGB(255, 255, 255)
+        button.BorderSizePixel = 2
+
+        -- Добавляем метки для статуса, валюты и цели
+        local statusLabel = Instance.new("TextLabel")
+        statusLabel.Parent = frame
+        statusLabel.Size = UDim2.new(1, -20, 0, 30)
+        statusLabel.Position = UDim2.new(0, 10, 0.3, 0)
+        statusLabel.Text = "Status: Waiting"
+        statusLabel.TextScaled = true
+        statusLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        statusLabel.BorderSizePixel = 0
+
+        local currencyLabel = Instance.new("TextLabel")
+        currencyLabel.Parent = frame
+        currencyLabel.Size = UDim2.new(1, -20, 0, 30)
+        currencyLabel.Position = UDim2.new(0, 10, 0.4, 0)
+        currencyLabel.Text = "Currency: N/A"
+        currencyLabel.TextScaled = true
+        currencyLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        currencyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        currencyLabel.BorderSizePixel = 0
+
+        local goalLabel = Instance.new("TextLabel")
+        goalLabel.Parent = frame
+        goalLabel.Size = UDim2.new(1, -20, 0, 30)
+        goalLabel.Position = UDim2.new(0, 10, 0.5, 0)
+        goalLabel.Text = "Goal: N/A"
+        goalLabel.TextScaled = true
+        goalLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        goalLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        goalLabel.BorderSizePixel = 0
+
+        -- Создаем снежинки для эффекта
+        local snowEffect = Instance.new("Folder")
+        snowEffect.Parent = blackBackground
+
+        local function createSnowflake()
+            local snowflake = Instance.new("Frame")
+            snowflake.Size = UDim2.new(0, 5, 0, 5)
+            snowflake.Position = UDim2.new(math.random(), 0, -0.1, 0)
+            snowflake.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            snowflake.BorderSizePixel = 0
+            snowflake.Parent = snowEffect
+
+            local tween = game:GetService("TweenService"):Create(
+                snowflake,
+                TweenInfo.new(5, Enum.EasingStyle.Linear),
+                {Position = UDim2.new(snowflake.Position.X.Scale, 0, 1.1, 0)}
+            )
+            tween:Play()
+            tween.Completed:Connect(function()
+                snowflake:Destroy()
+            end)
+        end
+
+        -- Генерация снежинок
+        game:GetService("RunService").RenderStepped:Connect(function()
+            if math.random() > 0.9 then
+                createSnowflake()
+            end
+        end)
+
+-- Добавляем логотип в интерфейс
+local logo = Instance.new("ImageLabel")
+logo.Parent = blackBackground
+logo.Size = UDim2.new(0, 350, 0, 350) -- Размер логотипа
+logo.Position = UDim2.new(0.5, -170, 0, 200) -- Центрируем сверху
+logo.Image = "rbxassetid://122628540142410" -- Указываем Asset ID
+logo.BackgroundTransparency = 1 -- Прозрачный фон
+logo.BorderSizePixel = 0 -- Убираем рамки
+
+-- Скрипт для отображения валюты на экране
+local player = game.Players.LocalPlayer
+local dataFolder = player:WaitForChild("DataFolder")
+local currency = dataFolder:WaitForChild("Currency")
+
+-- Создаем GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Создаем фрейм
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 300, 0, 100)  -- размер фрейма
+frame.Position = UDim2.new(0.5, -150, 0, 50)  -- позиция фрейма
+frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+frame.BackgroundTransparency = 0.7
+frame.BorderSizePixel = 2
+frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+frame.Parent = screenGui
+
+-- Создаем текстовую метку для отображения валюты
+local currencyTextLabel = Instance.new("TextLabel")
+currencyTextLabel.Size = UDim2.new(1, 0, 1, 0)  -- размер текста
+currencyTextLabel.Position = UDim2.new(0, 0, 0, 0)  -- позиция текста
+currencyTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+currencyTextLabel.TextSize = 32  -- увеличиваем размер текста
+currencyTextLabel.Text = "Currency: " .. currency.Value
+currencyTextLabel.Font = Enum.Font.GothamBold  -- стиль шрифта
+currencyTextLabel.TextStrokeTransparency = 0.5  -- контур текста
+currencyTextLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)  -- цвет контура
+currencyTextLabel.TextYAlignment = Enum.TextYAlignment.Center  -- выравнивание по вертикали
+currencyTextLabel.Parent = frame
+
+-- Добавим анимацию для фрейма
+local tweenService = game:GetService("TweenService")
+local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out, -1, true)  -- настройка анимации
+local goal = {Position = UDim2.new(0.5, -150, 0, 60)}  -- цель для анимации
+local tween = tweenService:Create(frame, tweenInfo, goal)
+tween:Play()
+
+-- Обновляем валюту
+currency.Changed:Connect(function()
+    currencyTextLabel.Text = "Currency: " .. currency.Value
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Parent = game.Players.LocalPlayer.PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(1, 0, 0, -500) -- Это может создать полосу сверху!
+frame.Position = UDim2.new(0, 0, 0, 0)
+frame.BackgroundColor3 = Color3.new(0.000000, 0.000000, 0.000000)
+frame.Parent = gui
+
+
+        -- Обработчик для кнопки
+button.MouseButton1Click:Connect(function()
+    for playerName, _ in pairs(pokupatel) do
+        local targetPlayer = Players:FindFirstChild(playerName)
+        if targetPlayer then
+            local currency = targetPlayer:FindFirstChild("DataFolder"):FindFirstChild("Currency")
+            if currency then
+                local currentCurrency = currency.Value
+                local goalAmount = tonumber(pokupatel[playerName]:sub(1, -2)) * (pokupatel[playerName]:sub(-1) == "m" and 1000000 or 1000)
+                local remainingAmount = math.max(0, goalAmount - currentCurrency)
+                statusLabel.Text = "Status: Online (" .. playerName .. ")"
+                statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                currencyLabel.Text = "Currency: " .. formatCurrency(currentCurrency)
+                goalLabel.Text = "Goal: " .. formatCurrency(remainingAmount) .. " remaining"
+
+                if remainingAmount == 0 then
+                    -- Цель достигнута, начинаем мигание зеленым
+                    flashGreenEffect()
+                else
+                    -- Останавливаем мигание, если цель не достигнута
+                    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                end
+
+                -- Отправляем информацию в вебхук
+                sendBuyerInfo(playerName)
+            end
+        else
+            statusLabel.Text = "Status: Not Found"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+            currencyLabel.Text = "Currency: N/A"
+            goalLabel.Text = "Goal: N/A"
+        end
+    end
+end)
+end
+end)
+
+
+
+-- Локальная переменная с кодами (по умолчанию)
+codes = codes
+
+-- Делаем переменную глобальной
+getgenv().codes = codes
+
+-- Вводим коды
+for _, code in ipairs(codes) do
+    -- Отправляем событие для ввода промокода
+    game:GetService("ReplicatedStorage").MainEvent:FireServer("EnterPromoCode", code)
+    
+    -- Уведомление о вводе кода
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Код введен",
+        Text = "Введен код: " .. code,
+        Duration = 5 -- 5 секунд
+    })
+    task.wait(5) -- Задержка между вводами
+end
+
+
+-- Исходный список исключенных игроков
+local excludedPlayers = { "1", "rrr" }
+
+-- Переменная с именем целевого игрока
+local targetPlayerName = "1"
+
+-- Замена значений в excludedPlayers
+for i, player in ipairs(excludedPlayers) do
+    for name, _ in pairs(pokupatel) do
+        if player == "1" then
+            excludedPlayers[i] = name
+        end
+    end
+end
+
+-- Замена целевого игрока, если это необходимо
+for name, _ in pairs(pokupatel) do
+    if targetPlayerName == "1" then
+        targetPlayerName = name
+    end
+end
+
+-- Проверяем результат
+print("Excluded Players:")
+for _, player in ipairs(excludedPlayers) do
+    print(player)
+end
+
+print("Target Player Name: " .. targetPlayerName)
+
+-- Функция для преобразования строки в число
+local function parseCurrency(currencyString)
+    local num = tonumber(currencyString:match("(%d+)"))
+    local suffix = currencyString:match("%a+$")
+    
+    if suffix == "m" then
+        num = num * 1000000
+    elseif suffix == "k" then
+        num = num * 1000
+    end
+
+    return num or 0
+end
+
+-- Получаем локального игрока и его валюту
+local player = game.Players.LocalPlayer
+local currencyValues = player:WaitForChild("DataFolder"):WaitForChild("Currency") -- Убираем .Values
+
+while wait(0.5) do 
+    local players = game:GetService("Players"):GetPlayers()
+    local validPlayers = {}
+
+    -- Формируем список игроков, которые не находятся в excludedPlayers
+    for _, player in pairs(players) do
+        if not table.find(excludedPlayers, player.Name) then
+            table.insert(validPlayers, player.Name)
+        end
+    end
+
+    if #validPlayers > 0 then
+        local randomPlayer = validPlayers[math.random(1, #validPlayers)]
+        local A_1 = randomPlayer
+        local maxCurrency = currencyValues.Value -- Используем только .Value
+
+        -- Устанавливаем A_2 в зависимости от валюты
+        local A_2 = math.min(2500000, math.max(50000, maxCurrency))
+
+        -- Отправляем событие с выбранным игроком
+        local Event = game:GetService("ReplicatedStorage").Remotes.SetBounty
+        Event:InvokeServer(A_1, A_2)
+
+        -- Получаем текст из TextLabel
+        local bountyPoster = workspace.MAP.BountyPosters.Poster.Texts:FindFirstChild("PlayerName") 
+        if bountyPoster and bountyPoster.SurfaceGui and bountyPoster.SurfaceGui.TextLabel and bountyPoster.SurfaceGui.TextLabel:IsDescendantOf(workspace) then
+            local bountyPlayerName = bountyPoster.SurfaceGui.TextLabel.Text
+            
+            -- Проверяем на совпадение ника
+            if bountyPlayerName == game.Players.LocalPlayer.Name then
+                local targetPlayer = game.Players:FindFirstChild(targetPlayerName)
+                
+                -- Проверяем, если у игрока достаточно валюты, исходя из данных в pokupatel
+                if targetPlayer then
+                    local targetCurrency = targetPlayer:WaitForChild("DataFolder"):WaitForChild("Currency").Value
+                    local targetLimit = parseCurrency(pokupatel[targetPlayerName]) -- Берем лимит из pokupatel
+
+                    if targetCurrency >= targetLimit then
+                        print(targetPlayerName .. " has enough currency (" .. targetCurrency .. "), stopping teleport.")
+                    else
+                        if targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            -- Телепортируем игрока к указанному
+                            game.Players.LocalPlayer.Character:MoveTo(targetPlayer.Character.HumanoidRootPart.Position)
+                        end
+                    end
+                end
+            end
+        end
+    else
+        print("Нет допустимых игроков для выбора.")
+    end
+end
